@@ -46,3 +46,42 @@ export const useAtualizarEstoquePecas = () => {
     },
   })
 }
+
+export const useDevolverEstoquePecas = () => {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: async (params: AtualizarEstoqueParams[]) => {
+      // Para cada peça, devolver ao estoque
+      for (const { pecaId, quantidadeUtilizada } of params) {
+        // Primeiro, buscar o estoque atual
+        const { data: peca, error: pecaError } = await supabase
+          .from("pecas")
+          .select("estoque")
+          .eq("id", pecaId)
+          .single()
+
+        if (pecaError) throw pecaError
+
+        const estoqueAtual = peca.estoque || 0
+        const novoEstoque = estoqueAtual + quantidadeUtilizada
+
+        // Atualizar o estoque
+        const { error: updateError } = await supabase
+          .from("pecas")
+          .update({ estoque: novoEstoque })
+          .eq("id", pecaId)
+
+        if (updateError) throw updateError
+      }
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["pecas"] })
+      toast.success("Peças devolvidas ao estoque com sucesso!")
+    },
+    onError: (error) => {
+      console.error("Erro ao devolver peças ao estoque:", error)
+      toast.error("Erro ao devolver peças ao estoque")
+    },
+  })
+}

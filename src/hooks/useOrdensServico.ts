@@ -2,7 +2,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import { supabase } from "@/integrations/supabase/client"
 import { Tables, TablesInsert, TablesUpdate } from "@/integrations/supabase/types"
 import { toast } from "sonner"
-import { useAtualizarEstoquePecas } from "./useEstoquePecas"
+import { useAtualizarEstoquePecas, useDevolverEstoquePecas } from "./useEstoquePecas"
 
 type OrdemServico = Tables<"ordem_servico">
 type OrdemServicoInsert = TablesInsert<"ordem_servico">
@@ -78,6 +78,7 @@ export const useOrdensServico = () => {
 export const useUpdateOrdemServico = () => {
   const queryClient = useQueryClient()
   const atualizarEstoquePecas = useAtualizarEstoquePecas()
+  const devolverEstoquePecas = useDevolverEstoquePecas()
 
   return useMutation({
     mutationFn: async ({ id, ...updates }: OrdemServicoUpdate & { id: string }) => {
@@ -108,26 +109,27 @@ export const useUpdateOrdemServico = () => {
 
       if (error) throw error
 
-      // Verificar se o status mudou para "Finalizado" ou "Entregue"
+      // Verificar mudanças de status para controle de estoque
       const statusAntesFinalizacao = ["Andamento", "Aguardando Peças"]
       const statusFinalizacao = ["Finalizado", "Entregue"]
       
       const statusAnterior = osAtual.status_servico
       const novoStatus = updates.status_servico
 
-      // Se mudou de um status antes da finalização para finalizado/entregue
-      if (statusAntesFinalizacao.includes(statusAnterior) && 
-          novoStatus && 
-          statusFinalizacao.includes(novoStatus)) {
-        
-        // Descontar peças do estoque
-        if (osAtual.orcamento?.orcamento_pecas && osAtual.orcamento.orcamento_pecas.length > 0) {
-          const pecasParaDescontar = osAtual.orcamento.orcamento_pecas.map(op => ({
-            pecaId: op.peca_id,
-            quantidadeUtilizada: op.quantidade
-          }))
+      if (novoStatus && osAtual.orcamento?.orcamento_pecas && osAtual.orcamento.orcamento_pecas.length > 0) {
+        const pecasParaProcessar = osAtual.orcamento.orcamento_pecas.map(op => ({
+          pecaId: op.peca_id,
+          quantidadeUtilizada: op.quantidade
+        }))
 
-          await atualizarEstoquePecas.mutateAsync(pecasParaDescontar)
+        // Se mudou de status antes da finalização para finalizado/entregue
+        if (statusAntesFinalizacao.includes(statusAnterior) && statusFinalizacao.includes(novoStatus)) {
+          await atualizarEstoquePecas.mutateAsync(pecasParaProcessar)
+        }
+        
+        // Se mudou de finalizado/entregue para status antes da finalização
+        if (statusFinalizacao.includes(statusAnterior) && statusAntesFinalizacao.includes(novoStatus)) {
+          await devolverEstoquePecas.mutateAsync(pecasParaProcessar)
         }
       }
 
